@@ -1,0 +1,8 @@
+bin/
+cometbft/bin/
+crypto-config/
+crypto-config-wan/
+figuras_*/
+resultados/graficos/
+__pycache__/
+*.pyc

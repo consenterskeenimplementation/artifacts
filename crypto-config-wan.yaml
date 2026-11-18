@@ -1,0 +1,30 @@
+OrdererOrgs:
+  - Name: Orderer
+    Domain: example.com
+    EnableNodeOUs: true
+    Specs:
+      - Hostname: orderer
+        SANS: &sansWAN
+          - "localhost"
+          - "127.0.0.1"
+          - "127.0.1.1"
+          - "127.0.2.1"
+          - "127.0.3.1"
+          - "127.0.4.1"
+          - "127.0.5.1"
+          - "127.0.6.1"
+      - Hostname: orderer2
+        SANS: *sansWAN
+      - Hostname: orderer3
+        SANS: *sansWAN
+      - Hostname: orderer4
+        SANS: *sansWAN
+
+PeerOrgs:
+  - Name: Org1
+    Domain: org1.example.com
+    EnableNodeOUs: true
+    Template:
+      Count: 1
+    Users:
+      Count: 1

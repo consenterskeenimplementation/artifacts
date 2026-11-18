@@ -1,0 +1,299 @@
+<title>Skeen sobre CometBFT</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: coluna de leitura com um "diagrama de sequência" interativo no centro (duas blockchains, réplicas como raias). */
+:root {
+  --bg: #f5f7f8; --surface: #ffffff; --fg: #18212b; --muted: #5a6573; --line: #d8dee5;
+  --a: #0b7b84; --b: #b1541a; --ok: #1e7a3f; --bad: #b42318; --code-bg: #eef2f5; --hl: #fff3c4;
+  --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1418; --surface: #161d23; --fg: #e5eaef; --muted: #9aa6b2; --line: #2a343d;
+  --a: #4cc3cd; --b: #ef9b5c; --ok: #5fcf88; --bad: #ff8a80; --code-bg: #1b242c; --hl: #3a3415; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f1418; --surface: #161d23; --fg: #e5eaef; --muted: #9aa6b2; --line: #2a343d;
+  --a: #4cc3cd; --b: #ef9b5c; --ok: #5fcf88; --bad: #ff8a80; --code-bg: #1b242c; --hl: #3a3415; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1040px; margin: 0 auto; padding-block: 28px 56px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 34px; }
+h1 { font-size: 1.9rem; font-weight: 600; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+h2 { font-size: 1.2rem; font-weight: 600; margin: 0 0 4px; text-wrap: balance; }
+p { margin: 0; max-width: 72ch; }
+.muted { color: var(--muted); }
+.mono { font-family: var(--mono); font-size: 0.86em; }
+header { display: grid; gap: 10px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font-family: var(--mono); font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); }
+.chip.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+.chip.bad { color: var(--bad); border-color: var(--bad); }
+.dot-a { color: var(--a); } .dot-b { color: var(--b); }
+section { display: grid; gap: 14px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 14px; min-width: 0; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+select, button { font: inherit; font-size: 14px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 6px 12px; }
+button { cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button:focus-visible, select:focus-visible { outline: 2px solid var(--a); outline-offset: 2px; }
+button.prim { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.diagram { overflow-x: auto; }
+.diagram svg { display: block; width: 100%; min-width: 620px; height: auto; }
+.step { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 16px; }
+@media (max-width: 760px) { .step { grid-template-columns: minmax(0, 1fr); } }
+.step-txt { display: grid; gap: 8px; align-content: start; }
+.eyebrow { font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+.step-title { font-size: 1.08rem; font-weight: 600; }
+.ref { font-family: var(--mono); font-size: 12.5px; display: grid; gap: 2px; }
+.ref span { color: var(--muted); }
+pre.code { margin: 0; background: var(--code-bg); border-radius: 8px; padding: 10px 0; overflow: auto; max-height: 340px; font-family: var(--mono); font-size: 12.3px; line-height: 1.5; }
+pre.code .ln { display: block; padding: 0 12px 0 0; white-space: pre; }
+pre.code .n { display: inline-block; width: 3.6em; padding-right: 10px; text-align: right; color: var(--muted); user-select: none; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; font-size: 12.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+td.num { font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 13px; }
+.tbl { overflow-x: auto; }
+.check { display: grid; grid-template-columns: 9.5em minmax(0, 1fr); gap: 4px 12px; align-items: baseline; }
+.pill { font-family: var(--mono); font-size: 12px; font-weight: 500; padding: 1px 8px; border-radius: 5px; justify-self: start; }
+.pill.ok { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+.pill.bad { background: color-mix(in srgb, var(--bad) 16%, transparent); color: var(--bad); }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+ul { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; max-width: 72ch; }
+code { font-family: var(--mono); font-size: 0.88em; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+pre.cmd { margin: 0; background: var(--code-bg); border-radius: 8px; padding: 12px; overflow-x: auto; font-family: var(--mono); font-size: 12.5px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">rede-skeen · cross-chain · protótipo local</div>
+    <h1>Skeen sobre CometBFT</h1>
+    <p>O Algoritmo 3 do artigo executando entre blockchains com consenso BFT próprio, sem modificar nenhum dos consensos.
+      <span id="descricao"></span> Os dados abaixo são de execuções reais, sem WAN.</p>
+    <div class="chips" id="chips"></div>
+  </header>
+
+  <section>
+    <div>
+      <h2>Uma transação global, passo a passo</h2>
+      <p class="muted">Escolha uma transação e avance pelos eventos. Cada raia é uma réplica: o coordenador (réplica 0) e uma
+        réplica comum (réplica 1) de cada blockchain. O tempo é contado a partir do envio pelo cliente. Setas são certificados
+        que cruzam de uma blockchain para a outra.</p>
+    </div>
+    <div class="panel">
+      <div class="controls">
+        <label for="exec" class="muted">Execução</label>
+        <select id="exec"></select>
+        <label for="tx" class="muted">Transação</label>
+        <select id="tx"></select>
+        <button id="prev" type="button">◀ Anterior</button>
+        <button id="next" type="button" class="prim">Próximo ▶</button>
+        <button id="play" type="button">Reproduzir</button>
+        <span class="mono muted" id="pos"></span>
+      </div>
+      <div class="diagram" id="diagram"></div>
+      <div class="step">
+        <div class="step-txt">
+          <div class="eyebrow" id="st-when"></div>
+          <div class="step-title" id="st-title"></div>
+          <p id="st-body"></p>
+          <div class="ref"><span>No artigo</span><b id="st-art"></b></div>
+          <div class="ref"><span>No código</span><b id="st-code"></b></div>
+        </div>
+        <pre class="code" id="st-src" aria-label="Trecho do código"></pre>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div>
+      <h2>Do artigo ao código</h2>
+      <p class="muted">Onde cada linha do Algoritmo 3 está implementada. Os números de linha são do código atual.</p>
+    </div>
+    <div class="panel tbl"><table id="mapa"><thead><tr><th>Passo</th><th>Artigo</th><th>Função</th><th>Arquivo</th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section>
+    <div>
+      <h2>Verificação da execução</h2>
+      <p class="muted" id="cfg"></p>
+    </div>
+    <div class="grid2">
+      <div class="panel" id="checks"></div>
+      <div class="panel tbl">
+        <table><thead><tr><th>Latência</th><th>n</th><th>média</th><th>p50</th><th>p99</th></tr></thead><tbody id="lat"></tbody></table>
+        <p class="muted" style="font-size:13.5px">Sem WAN, cada bloco do CometBFT leva ~160 ms (eram ~510 ms com os
+          parâmetros de rede padrão). Uma global passa por 2 consensos (START_LOCAL e FINAL_LOCAL) mais a troca de
+          certificados, ~0,4 s. As locais esperam as globais com timestamp menor (entrega em ordem total, C10).</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div><h2>Como reproduzir</h2></div>
+    <pre class="cmd">cd cometbft/skeenabci && go build -o ../bin/skeen-node . && go build -o ../bin/skeen-cliente ./cliente
+cd .. && CHAINS=4 DEST=2 N=2000 CROSS=0.2 RATE=400 bash rodar_local.sh /tmp/skeen_teste
+# Fabric × CometBFT (da raiz; ferramentas do Fabric compiladas da árvore do Skeen em cometbft/bin/fabric)
+DRENO=45 FABBIN=cometbft/bin/fabric W=4 CROSS=0.3 DUR=20 bash cometbft/rodar_hetero_local.sh /tmp/het cometbft/bin/fabric/orderer_alg3_local cometbft/bin/fabric/cliente_e2e_bin
+python3 gera_pagina.py --cmt /tmp/skeen_teste/out --het /tmp/het pagina.html
+# com perda de mensagens injetada: SKEEN_DROP=0.02 DRENO=12 CHAINS=4 DEST=2 bash rodar_local.sh /tmp/skeen_perda</pre>
+  </section>
+
+  <section>
+    <div><h2>Limites desta versão</h2></div>
+    <ul>
+      <li>Coordenador do CometBFT fixo (réplica 0 de cada blockchain); no Fabric o coordenador é o líder do SmartBFT.
+        A troca de coordenador no CometBFT ainda não foi implementada.</li>
+      <li>Fabric × CometBFT: as raízes de confiança cruzadas são fixadas fora da cadeia (certificados x509 dos orderers na
+        configuração do CometBFT; chaves ed25519 dos validadores em SKEEN_FOREIGN no Fabric). As provas são as assinaturas
+        f+1 da camada Skeen, não os certificados de commit dos consensos.</li>
+      <li>Fabric × CometBFT: o relay do START existe só no sentido Fabric → CometBFT; no outro sentido, o cliente reenvia
+        até ser aceito.</li>
+      <li>Mensagens perdidas são recuperadas por pedido (NEED). CometBFT × CometBFT testado com 2% e 20% das mensagens
+        descartadas de propósito. Fabric × CometBFT: 6 execuções seguidas sem falha depois da correção de 17/11 (leitura
+        das mensagens do Fabric desacoplada do processamento e pedidos agrupados).</li>
+      <li>Execuções locais, sem WAN, com o sistema perto da saturação (a latência inclui fila). Próximo passo: carga
+        controlada e bateria no servidor com WAN.</li>
+      <li>Revisão de fidelidade ao artigo: lado Fabric fiel; os achados do lado CometBFT foram corrigidos e estão em
+        reconferência.</li>
+    </ul>
+  </section>
+</div>
+
+<script id="dados" type="application/json">__DADOS__</script>
+<script>
+(function () {
+  const D = JSON.parse(document.getElementById("dados").textContent);
+  let X = 0;
+  const DS = () => D.execs[X];
+  const ehFab = (c) => DS().fabric.includes(c);
+  const $ = (id) => document.getElementById(id);
+  let CH = ["A", "B"]; // as 2 blockchains de destino da transação escolhida
+  const rowsOf = () => CH.flatMap((c) => ehFab(c) ? [[c, 0, `${c} · Fabric`]] : [[c, 0, `${c} · coordenador`], [c, 1, `${c} · réplica 1`]]);
+  const tsTxt = (v) => (v && v.g ? `⟨${v.c}, ${v.g}⟩` : "");
+  const outra = (c) => CH.find((g) => g !== c) || c;
+  const nome = (c, r) => (ehFab(c) ? `rede Fabric (${c})` : r === 0 ? `coordenador de ${c}` : `réplica ${r} de ${c}`);
+  const fn = (k) => { const m = D.codigo[k].codigo.match(/func (?:\(([^)]*)\) )?(\w+)/); return m ? m[2] + "()" : (k === "START" ? "FinalizeBlock(), START" : "FinalizeBlock(), FINAL_LOCAL"); };
+  const codeOf = (d, e) => (typeof d.code === "function" ? d.code(e) : d.code);
+  const EV = {
+    START: { art: "Alg. 3, l. 7–12", code: "START", t: (e) => `START_LOCAL ordenado em ${e.c}`,
+      b: (e) => `O consenso da blockchain ${e.c} ordenou o START (a transação do cliente). Na ${nome(e.c, e.r)}, FinalizeBlock faz clock++ e local[m] = ${tsTxt(e.v)}, assina o voto TS_LOCAL com a chave de validador e o envia ao coordenador.` },
+    TSCERT: { art: "Alg. 3, l. 13–15", code: "VOTE", t: (e) => `Certificado TS de ${e.c} formado`,
+      b: (e) => `O coordenador de ${e.c} juntou f+1 = 2 votos TS_LOCAL válidos, de réplicas distintas, sobre ${tsTxt(e.v)}. O certificado segue para os coordenadores de todos os destinos (R-multicast).` },
+    TSCERT_RX: { art: "Alg. 3, l. 15–16", code: (e) => (ehFab(outra(e.c)) ? "WIRE" : "ONCERT"), t: (e) => `Certificado TS de ${outra(e.c)} chega a ${e.c}`,
+      b: (e) => ehFab(outra(e.c))
+        ? `O coordenador de ${e.c} recebeu o certificado TS da rede Fabric (${outra(e.c)}) pelo protocolo do próprio Fabric (msgpack) e o verificou: f+1 assinaturas ECDSA de orderers distintos, conferidas com os certificados x509 fixados, sobre o mesmo resumo SHA-256. Valor da tx no lote: ${tsTxt(e.v)}.`
+        : `O coordenador de ${e.c} recebeu e verificou (2 assinaturas ed25519 de validadores de ${outra(e.c)}) o certificado TS com ${tsTxt(e.v)}.` },
+    FINAL_SUB: { art: "Alg. 3, l. 16–18", code: "BATCH", t: (e) => `FINAL_LOCAL submetido em ${e.c}`,
+      b: (e) => `Com certificados TS de todos os destinos, o coordenador de ${e.c} submete ao consenso do próprio grupo a transação FINAL_LOCAL, que carrega as provas.` },
+    FINAL: { art: "Alg. 3, l. 19–24", code: "FINAL", t: (e) => `FINAL_LOCAL ordenado em ${e.c}`,
+      b: (e) => `Na ${nome(e.c, e.r)}, FinalizeBlock verifica os certificados (checkTSCerts), calcula final[m] = máximo = ${tsTxt(e.v)}, faz clock ← max(clock, final[m]), chama tryDeliver e envia o voto ACK_LOCAL ao coordenador.` },
+    ACKCERT: { art: "Alg. 3, l. 25–27", code: "VOTE", t: (e) => `Certificado ACK de ${e.c} formado`,
+      b: (e) => `O coordenador de ${e.c} juntou f+1 votos ACK_LOCAL sobre final[m] = ${tsTxt(e.v)} e envia o certificado aos coordenadores dos destinos.` },
+    ACKCERT_RX: { art: "Alg. 3, l. 27–28", code: (e) => (ehFab(outra(e.c)) ? "WIRE" : "ONCERT"), t: (e) => `Certificado ACK de ${outra(e.c)} chega a ${e.c}`,
+      b: (e) => `O coordenador de ${e.c} verificou o certificado ACK de ${outra(e.c)}: os dois grupos confirmam o mesmo final[m] (C3).` },
+    DLV: { art: "Alg. 3, l. 28–30", code: "BATCH", t: (e) => `DELIVER_LOCAL em ${e.c}`,
+      b: (e) => `Com ACK de todos os destinos, o coordenador de ${e.c} repassa os certificados de ACK a todas as réplicas do grupo (R-broadcast).` },
+    ACKED: { art: "Alg. 3, l. 31–32", code: "DLV", t: (e) => `Tx confirmada na ${nome(e.c, e.r)}`,
+      b: (e) => `A ${nome(e.c, e.r)} verificou os certificados de ACK de todos os destinos: m entra em acked e o tryDeliver é chamado.` },
+    DELIVER: { art: "Alg. 1, l. 20–25", code: "TRYDELIVER", t: (e) => `Entregue na ${nome(e.c, e.r)}`,
+      b: (e) => `tryDeliver entregou m na ordem do final ${tsTxt(e.v)}: nenhuma transação pendente sem final tem timestamp local menor, e todas as finalizadas com final menor já foram entregues.` },
+    F_O: { art: "Alg. 3, l. 5–7", code: "FABORDER", t: (e) => `START chega à rede Fabric (${e.c})`,
+      b: (e) => `O cliente envia a mesma transação, com o mesmo TxID, ao Broadcast do Fabric. O consenter Skeen a admite (controle de fluxo no canal de origem) e a entrega ao SmartBFT, que ordena o START_LOCAL; o coordenador do Fabric assina e envia o certificado TS ao coordenador do CometBFT.` },
+    F_D: { art: "Alg. 1, l. 20–25", code: "FOREIGN", t: (e) => `Entregue na rede Fabric (${e.c})`,
+      b: (e) => `A primeira réplica do Fabric entregou a transação. Antes, o Fabric verificou os certificados do CometBFT com as chaves ed25519 dos validadores (SKEEN_FOREIGN): f+1 assinaturas distintas sobre o mesmo resumo do formato do Fabric. A ordem é a mesma nas duas plataformas.` },
+  };
+  const MAPA = [
+    ["START_LOCAL e voto TS_LOCAL", "Alg. 3, l. 7–12", "START"], ["Certificado TS (f+1) e R-multicast", "Alg. 3, l. 13–15", "VOTE"],
+    ["Recebe certificado de outro grupo", "Alg. 3, l. 15–16, 27–28", "ONCERT"], ["Verificação f+1 assinaturas", "Provas (C1, C3)", "VERIFY"],
+    ["Submete FINAL_LOCAL / envia DELIVER_LOCAL", "Alg. 3, l. 16–18, 28–30", "PROGRESS"], ["FINAL_LOCAL: final[m], clock, voto ACK", "Alg. 3, l. 19–24", "FINAL"],
+    ["Confere certificados TS do FINAL", "Alg. 3, l. 19–20 (C1)", "CHECKTS"], ["DELIVER_LOCAL → acked", "Alg. 3, l. 31–32", "DLV"],
+    ["tryDeliver e deliver", "Alg. 1, l. 20–25", "TRYDELIVER"],
+    ["Pedido do que falta (NEED) e relay do START", "R-multicast confiável (l. 5, 15, 27, 30)", "RETRANSMIT"],
+    ["Resposta ao NEED", "R-multicast confiável", "NEED"],
+    ["FINAL_LOCAL e DELIVER_LOCAL em lote", "Alg. 3, l. 18 e 30", "BATCH"],
+    ["Ponte com o Fabric: CERT/REPLY/NEED/START no protocolo do Fabric", "entre plataformas", "WIRE"],
+    ["Resumo do certificado no formato do Fabric (o mesmo nos dois lados)", "createProof", "DIGEST"],
+    ["CometBFT verifica certificado do Fabric (ECDSA, x509 fixado)", "Provas (C1, C3)", "VERIFYFAB"],
+    ["Fabric verifica certificado do CometBFT (ed25519)", "Provas (C1, C3)", "FOREIGN"],
+    ["Fabric: admissão do START na origem", "Alg. 3, l. 5–7", "FABORDER"],
+  ];
+
+  // cabeçalho e verificação (por execução)
+  function cabecalho() {
+    const R = DS().resumo;
+    $("descricao").textContent = DS().descricao;
+    $("chips").innerHTML = Object.entries(R.checagens).map(([k, v]) => `<span class="chip ${v.ok ? "ok" : "bad"}">${k} ${v.ok ? "OK" : "FALHA"}</span>`).join("");
+    $("checks").innerHTML = `<div class="check">` + Object.entries(R.checagens).map(([k, v]) =>
+      `<span class="pill ${v.ok ? "ok" : "bad"}">${k}</span><span>${v.detalhe}</span>`).join("") + `</div>`;
+    $("cfg").textContent = DS().config + " Entregas: " + Object.entries(R.blockchains).map(([g, b]) => `${g} = ${b.entregas}`).join(", ") + ".";
+    $("lat").innerHTML = ["globais", "locais"].filter((k) => R["latencia_" + k]).map((k) => { const l = R["latencia_" + k];
+      return `<tr><td>${k === "globais" ? "Globais" : "Locais"}</td><td class="num">${l.n}</td><td class="num">${l.media_ms} ms</td><td class="num">${l.p50_ms} ms</td><td class="num">${l.p99_ms} ms</td></tr>`; }).join("");
+    $("tx").innerHTML = "";
+    DS().txs.forEach((t, i) => { const o = document.createElement("option"); o.value = i; o.textContent = t.id; $("tx").appendChild(o); });
+  }
+  D.execs.forEach((e, i) => { const o = document.createElement("option"); o.value = i; o.textContent = e.nome; $("exec").appendChild(o); });
+  $("mapa").querySelector("tbody").innerHTML = MAPA.map(([p, a, k]) =>
+    `<tr><td>${p}</td><td>${a}</td><td class="mono">${fn(k)}</td><td class="mono">${D.codigo[k].arquivo}:${D.codigo[k].linha}</td></tr>`).join("");
+
+  // transação e passos
+  let tx = 0, k = 0, timer = null;
+  const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+  function draw() {
+    const evs = DS().txs[tx].eventos.filter((e) => EV[e.ev]);
+    CH = [...new Set(evs.map((e) => e.c))].sort();
+    const ROWS = rowsOf();
+    const W = 940, L = 150, Rm = 24, top = 26, rowH = 52, H = top + ROWS.length * rowH + 30;
+    const tmax = Math.max(...evs.map((e) => e.t)) * 1.04 || 1;
+    const x = (t) => L + (t / tmax) * (W - L - Rm);
+    const y = (c, r) => top + ROWS.findIndex((w) => w[0] === c && w[1] === r) * rowH + rowH / 2;
+    const col = (c) => (c === CH[0] ? "var(--a)" : "var(--b)");
+    let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Linha do tempo da transação ${DS().txs[tx].id}">`;
+    const ticks = 6;
+    for (let i = 0; i <= ticks; i++) { const t = (tmax / ticks) * i;
+      s += `<line x1="${x(t)}" x2="${x(t)}" y1="${top}" y2="${top + rowH * ROWS.length}" stroke="var(--line)" stroke-width="1"/>`;
+      s += `<text x="${x(t)}" y="${top + rowH * ROWS.length + 16}" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="var(--mono)">${Math.round(t)} ms</text>`; }
+    ROWS.forEach(([c, r, lab], i) => { const yy = top + i * rowH + rowH / 2;
+      s += `<line x1="${L}" x2="${W - Rm}" y1="${yy}" y2="${yy}" stroke="${col(c)}" stroke-opacity="0.35" stroke-width="2"/>`;
+      s += `<text x="${L - 10}" y="${yy + 4}" text-anchor="end" font-size="12.5" fill="${col(c)}" font-family="var(--sans)" font-weight="600">${lab}</text>`; });
+    s += `<text x="${x(0)}" y="${top - 9}" text-anchor="start" font-size="11" fill="var(--muted)" font-family="var(--mono)">envio do cliente</text>`;
+    // setas: certificado formado em um grupo → recebido no outro
+    evs.forEach((e, i) => { if (e.ev.endsWith("_RX")) { const kind = e.ev.replace("_RX", "");
+      const src = evs.find((o) => o.ev === kind && o.c === outra(e.c));
+      if (src) { const a = i <= k ? 0.9 : 0.25;
+        s += `<line x1="${x(src.t)}" y1="${y(src.c, src.r)}" x2="${x(e.t)}" y2="${y(e.c, e.r)}" stroke="var(--fg)" stroke-opacity="${a}" stroke-width="1.4" marker-end="url(#seta)"/>`; } } });
+    evs.forEach((e, i) => { const yy = y(e.c, e.r); if (isNaN(yy)) return;
+      const cur = i === k, past = i < k;
+      s += `<circle cx="${x(e.t)}" cy="${yy}" r="${cur ? 8 : 5.5}" fill="${past || cur ? col(e.c) : "var(--surface)"}" stroke="${col(e.c)}" stroke-width="2"><title>${e.ev} ${e.t} ms</title></circle>`;
+      if (cur) s += `<circle cx="${x(e.t)}" cy="${yy}" r="13" fill="none" stroke="${col(e.c)}" stroke-opacity="0.45" stroke-width="2"/>`; });
+    s += `<defs><marker id="seta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--fg)"/></marker></defs></svg>`;
+    $("diagram").innerHTML = s;
+    const e = evs[k], d = EV[e.ev], c = D.codigo[codeOf(d, e)];
+    $("pos").textContent = `passo ${k + 1} de ${evs.length}`;
+    $("st-when").textContent = `+${e.t} ms · ${nome(e.c, e.r)}`;
+    $("st-title").textContent = d.t(e);
+    $("st-body").textContent = d.b(e);
+    $("st-art").textContent = d.art;
+    $("st-code").textContent = `${c.arquivo}:${c.linha} · ${fn(codeOf(d, e))}`;
+    $("st-src").innerHTML = c.codigo.split("\n").map((l, i) => `<span class="ln"><span class="n">${c.linha + i}</span>${esc(l)}</span>`).join("");
+    $("prev").disabled = k === 0; $("next").disabled = k === evs.length - 1;
+  }
+  const nEv = () => DS().txs[tx].eventos.filter((e) => EV[e.ev]).length;
+  $("tx").addEventListener("change", (ev) => { tx = +ev.target.value; k = 0; stop(); draw(); });
+  $("exec").addEventListener("change", (ev) => { X = +ev.target.value; tx = 0; k = 0; stop(); cabecalho(); draw(); });
+  $("prev").addEventListener("click", () => { if (k > 0) { k--; draw(); } });
+  $("next").addEventListener("click", () => { if (k < nEv() - 1) { k++; draw(); } });
+  function stop() { if (timer) { clearInterval(timer); timer = null; $("play").textContent = "Reproduzir"; } }
+  $("play").addEventListener("click", () => {
+    if (timer) { stop(); return; }
+    if (k >= nEv() - 1) k = 0;
+    $("play").textContent = "Pausar";
+    timer = setInterval(() => { if (k < nEv() - 1) { k++; draw(); } else stop(); }, 1100);
+  });
+  document.addEventListener("keydown", (ev) => { if (ev.target.tagName === "SELECT") return;
+    if (ev.key === "ArrowRight") $("next").click(); if (ev.key === "ArrowLeft") $("prev").click(); });
+  X = Math.max(0, D.execs.length - 1); $("exec").value = X; // abre na execução mais recente (Fabric × CometBFT, se houver)
+  cabecalho();
+  draw();
+})();
+</script>

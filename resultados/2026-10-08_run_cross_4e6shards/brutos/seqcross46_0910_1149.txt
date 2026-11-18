@@ -1,0 +1,4 @@
+ARQ_/dev/shm/g109dx_c*_d*_*_calibp/resultado.txt
+ARQ_/dev/shm/g109dx_c0_d2_*4_ab*/resultado.txt
+ARQ_/dev/shm/g109dx_c*_d*_*[46]_p/resultado.txt
+ARQ_/dev/shm/seq_cross46.txt

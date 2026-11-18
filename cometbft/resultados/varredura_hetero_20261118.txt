@@ -1,0 +1,17 @@
+inicio 2026-11-18_11:00:26 niveis=[100 200 400 800 1200] runs=3 W=64 cross=0.3 dur=30
+nivel=100 run=1 d_tps=100 incompletas_d=0 x_n=810 x_sd_avg=403.53ms x_sd_p50=404.07ms x_sd_p99=558.81ms i_sd_avg=325.10ms i_sd_p50=328.86ms   TPS global : 100.03 VEREDITO OK
+nivel=800 run=2 d_tps=793 incompletas_d=0 x_n=6383 x_sd_avg=444.98ms x_sd_p50=444.10ms x_sd_p99=572.48ms i_sd_avg=404.06ms i_sd_p50=401.62ms   TPS global : 793.67 VEREDITO OK
+nivel=100 run=3 d_tps=101 incompletas_d=0 x_n=804 x_sd_avg=392.76ms x_sd_p50=393.53ms x_sd_p99=563.14ms i_sd_avg=307.04ms i_sd_p50=321.42ms   TPS global : 100.03 VEREDITO OK
+nivel=1200 run=2 d_tps=1060 incompletas_d=0 x_n=8441 x_sd_avg=557.58ms x_sd_p50=506.90ms x_sd_p99=1881.22ms i_sd_avg=487.27ms i_sd_p50=432.56ms   TPS global : 1042.94 VEREDITO OK
+nivel=800 run=3 d_tps=791 incompletas_d=0 x_n=6178 x_sd_avg=466.18ms x_sd_p50=464.11ms x_sd_p99=725.13ms i_sd_avg=410.50ms i_sd_p50=408.28ms   TPS global : 793.68 VEREDITO OK
+nivel=800 run=1 d_tps=808 incompletas_d=0 x_n=6440 x_sd_avg=499.50ms x_sd_p50=480.59ms x_sd_p99=1275.47ms i_sd_avg=436.23ms i_sd_p50=416.13ms   TPS global : 793.61 VEREDITO OK
+nivel=400 run=1 d_tps=406 incompletas_d=0 x_n=3307 x_sd_avg=415.80ms x_sd_p50=425.26ms x_sd_p99=832.17ms i_sd_avg=360.14ms i_sd_p50=366.14ms   TPS global : 400.06 VEREDITO OK
+nivel=200 run=3 d_tps=202 incompletas_d=0 x_n=1623 x_sd_avg=381.62ms x_sd_p50=395.01ms x_sd_p99=570.23ms i_sd_avg=322.21ms i_sd_p50=336.38ms   TPS global : 200.03 VEREDITO OK
+nivel=1200 run=3 d_tps=1065 incompletas_d=0 x_n=8472 x_sd_avg=624.04ms x_sd_p50=511.38ms x_sd_p99=2541.18ms i_sd_avg=571.42ms i_sd_p50=463.14ms   TPS global : 1048.49 VEREDITO OK
+nivel=200 run=1 d_tps=203 incompletas_d=0 x_n=1595 x_sd_avg=445.41ms x_sd_p50=435.78ms x_sd_p99=935.46ms i_sd_avg=371.50ms i_sd_p50=364.00ms   TPS global : 199.84 VEREDITO OK
+nivel=100 run=2 d_tps=101 incompletas_d=0 x_n=820 x_sd_avg=364.00ms x_sd_p50=379.26ms x_sd_p99=521.80ms i_sd_avg=297.61ms i_sd_p50=313.20ms   TPS global : 100.03 VEREDITO OK
+nivel=400 run=3 d_tps=429 incompletas_d=0 x_n=3163 x_sd_avg=930.35ms x_sd_p50=672.30ms x_sd_p99=2596.99ms i_sd_avg=856.62ms i_sd_p50=615.07ms   TPS global : 389.69 VEREDITO OK
+nivel=200 run=2 d_tps=199 incompletas_d=0 x_n=1634 x_sd_avg=396.25ms x_sd_p50=397.19ms x_sd_p99=535.13ms i_sd_avg=336.42ms i_sd_p50=338.36ms   TPS global : 200.03 VEREDITO OK
+nivel=400 run=2 d_tps=403 incompletas_d=0 x_n=3290 x_sd_avg=485.43ms x_sd_p50=454.38ms x_sd_p99=1003.17ms i_sd_avg=414.36ms i_sd_p50=385.85ms   TPS global : 399.97 VEREDITO OK
+nivel=1200 run=1 d_tps=990 incompletas_d=0 x_n=7377 x_sd_avg=719.13ms x_sd_p50=632.18ms x_sd_p99=1655.64ms i_sd_avg=652.66ms i_sd_p50=563.52ms   TPS global : 968.34 VEREDITO OK
+FIM_VARREDURA 2026-11-18_13:10:07

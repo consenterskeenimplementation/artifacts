@@ -1,0 +1,983 @@
+Organizations:
+    - &OrdererOrg
+        Name: OrdererOrg
+        ID: OrdererMSP
+        MSPDir: crypto-config/ordererOrganizations/example.com/msp
+
+        OrdererEndpoints:
+            - 127.0.0.1:7050
+            - 127.0.0.1:8050
+            - 127.0.0.1:9050
+            - 127.0.0.1:10050
+
+        Policies:
+            Readers: {Type: Signature, Rule: "OR('OrdererMSP.member')"}
+            Writers: {Type: Signature, Rule: "OR('OrdererMSP.member')"}
+            Admins:  {Type: Signature, Rule: "OR('OrdererMSP.admin')"}
+
+    - &Org1
+        Name: Org1MSP
+        ID: Org1MSP
+        MSPDir: crypto-config/peerOrganizations/org1.example.com/msp
+        Policies:
+            Readers: {Type: Signature, Rule: "OR('Org1MSP.admin', 'Org1MSP.peer', 'Org1MSP.client')"}
+            Writers: {Type: Signature, Rule: "OR('Org1MSP.admin', 'Org1MSP.client')"}
+            Admins:  {Type: Signature, Rule: "OR('Org1MSP.admin')"}
+            Endorsement: {Type: Signature, Rule: "OR('Org1MSP.peer')"}
+
+Capabilities:
+    Channel: &ChannelCapabilities
+        V2_0: true
+    Channel_V3: &ChannelCapabilities_V3
+        V3_0: true
+    Orderer: &OrdererCapabilities
+        V2_0: true
+    Orderer_V3: &OrdererCapabilities_V3
+        V3_0: true
+    Application: &ApplicationCapabilities
+        V2_0: true
+
+Application: &ApplicationDefaults
+    Organizations:
+    Policies:
+        Readers: {Type: ImplicitMeta, Rule: "ANY Readers"}
+        Writers: {Type: ImplicitMeta, Rule: "ANY Writers"}
+        Admins:  {Type: ImplicitMeta, Rule: "MAJORITY Admins"}
+        LifecycleEndorsement: {Type: ImplicitMeta, Rule: "MAJORITY Endorsement"}
+        Endorsement: {Type: ImplicitMeta, Rule: "MAJORITY Endorsement"}
+
+Orderer: &OrdererDefaults
+    OrdererType: skeen
+    Addresses:
+        - 127.0.0.1:7050
+        - 127.0.0.1:8050
+        - 127.0.0.1:9050
+        - 127.0.0.1:10050
+    BatchTimeout: 2s
+    BatchSize:
+        MaxMessageCount: 500
+        AbsoluteMaxBytes: 99 MB
+        PreferredMaxBytes: 512 KB
+    Organizations:
+    Policies:
+        Readers: {Type: ImplicitMeta, Rule: "ANY Readers"}
+        Writers: {Type: ImplicitMeta, Rule: "ANY Writers"}
+        Admins:  {Type: ImplicitMeta, Rule: "MAJORITY Admins"}
+        BlockValidation: {Type: ImplicitMeta, Rule: "ANY Writers"}
+
+Channel: &ChannelDefaults
+    Policies:
+        Readers: {Type: ImplicitMeta, Rule: "ANY Readers"}
+        # Era ImplicitMeta "ANY Writers". O Fabric monta as sub-políticas (Application/Writers, Orderer/Writers)
+        # iterando um mapa Go — ordem aleatória por processo — e cada uma verifica a assinatura ECDSA antes de
+        # checar a organização: em parte dos boots a tx do cliente Org1 era verificada 2× (≈2/3 da vazão, zig-zag).
+        # Uma única política de assinatura com os mesmos escritores verifica 1× sempre (diagnóstico de 01/10/2026).
+        Writers: {Type: Signature, Rule: "OR('Org1MSP.admin', 'Org1MSP.client', 'OrdererMSP.member')"}
+        Admins:  {Type: ImplicitMeta, Rule: "MAJORITY Admins"}
+
+Profiles:
+    SkeenGenesis:
+        <<: *ChannelDefaults
+        Capabilities:
+            <<: *ChannelCapabilities
+        Orderer:
+            <<: *OrdererDefaults
+            Organizations:
+                - *OrdererOrg
+            Capabilities:
+                <<: *OrdererCapabilities
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:
+                - *Org1
+            Capabilities:
+                <<: *ApplicationCapabilities
+
+    # SkeenGenesisRTT: igual a SkeenGenesis, mas MaxMessageCount=1 — cada
+    # transação corta seu próprio bloco IMEDIATAMENTE por contagem, sem
+    # esperar o BatchTimeout de 2s. Só pra testes de baixa concorrência
+    # (workers=1) que medem latência de commit real via Deliver — com o
+    # BatchSize padrão (500), transações isoladas nunca enchem o lote por
+    # contagem e a latência medida fica dominada pelo timer de 2s, mascarando
+    # o efeito real que queremos medir (RTT de replicação). Ver
+    SkeenGenesisRTT:
+        <<: *ChannelDefaults
+        Capabilities:
+            <<: *ChannelCapabilities
+        Orderer:
+            <<: *OrdererDefaults
+            BatchSize:
+                MaxMessageCount: 1
+                AbsoluteMaxBytes: 99 MB
+                PreferredMaxBytes: 512 KB
+            Organizations:
+                - *OrdererOrg
+            Capabilities:
+                <<: *OrdererCapabilities
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:
+                - *Org1
+            Capabilities:
+                <<: *ApplicationCapabilities
+
+    SkeenChannel:
+        <<: *ChannelDefaults
+        Capabilities:
+            <<: *ChannelCapabilities
+        Orderer:
+            <<: *OrdererDefaults
+            Organizations:
+                - *OrdererOrg
+            Capabilities:
+                <<: *OrdererCapabilities
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:
+                - *Org1
+            Capabilities:
+                <<: *ApplicationCapabilities
+
+    # ==========================================
+    # PERFIS SKEEN-BFT-REAL: OrdererType skeen (consenter Skeen faz só a
+    # coordenação cross-shard), mas com ConsenterMapping + SmartBFT Options
+    # reais no config do canal, para que o consenter skeen delegue a
+    # replicação intra-shard ao motor SmartBFT nativo do Fabric (ver
+    # encoder.go case "skeen" e skeen.chain innerChain). Um perfil por shard
+    # porque cada shard tem 4 réplicas em portas próprias; reaproveita as
+    # mesmas 4 identidades TLS (orderer/orderer2/orderer3/orderer4) já
+    # geradas por crypto-config.yaml — só o Host:Port muda por shard.
+    # ==========================================
+    SkeenBFTRealGenesis1: &SkeenBFTRealBase
+        <<: *ChannelDefaults
+        Capabilities:
+            <<: *ChannelCapabilities_V3
+        Orderer:
+            <<: *OrdererDefaults
+            Addresses: []
+            BatchSize:
+                MaxMessageCount: 5000
+                AbsoluteMaxBytes: 10 MB
+                PreferredMaxBytes: 512 KB
+            Organizations:
+                - *OrdererOrg
+            Capabilities:
+                <<: *OrdererCapabilities
+            ConsenterMapping:
+                - ID: 1
+                  Host: 127.0.0.1
+                  Port: 7050
+                  MSPID: OrdererMSP
+                  Identity: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/msp/signcerts/orderer.example.com-cert.pem
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                - ID: 2
+                  Host: 127.0.0.1
+                  Port: 7051
+                  MSPID: OrdererMSP
+                  Identity: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/msp/signcerts/orderer2.example.com-cert.pem
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                - ID: 3
+                  Host: 127.0.0.1
+                  Port: 7052
+                  MSPID: OrdererMSP
+                  Identity: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/msp/signcerts/orderer3.example.com-cert.pem
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+                - ID: 4
+                  Host: 127.0.0.1
+                  Port: 7053
+                  MSPID: OrdererMSP
+                  Identity: crypto-config/ordererOrganizations/example.com/orderers/orderer4.example.com/msp/signcerts/orderer4.example.com-cert.pem
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer4.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer4.example.com/tls/server.crt
+            SmartBFT: &SkeenBFTRealSmartBFTOptions
+                RequestBatchMaxInterval: 200ms
+                RequestForwardTimeout: 5s
+                RequestComplainTimeout: 20s
+                RequestAutoRemoveTimeout: 3m0s
+                ViewChangeResendInterval: 5s
+                ViewChangeTimeout: 20s
+                LeaderHeartbeatTimeout: 1m0s
+                CollectTimeout: 1s
+                IncomingMessageBufferSize: 200
+                RequestPoolSize: 100000
+                LeaderHeartbeatCount: 10
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:
+                - *Org1
+            Capabilities:
+                <<: *ApplicationCapabilities
+
+    SkeenBFTRealGenesis2:
+        <<: *SkeenBFTRealBase
+        Orderer:
+            <<: *OrdererDefaults
+            Addresses: []
+            BatchSize:
+                MaxMessageCount: 5000
+                AbsoluteMaxBytes: 10 MB
+                PreferredMaxBytes: 512 KB
+            Organizations:
+                - *OrdererOrg
+            Capabilities:
+                <<: *OrdererCapabilities
+            ConsenterMapping:
+                - ID: 1
+                  Host: 127.0.0.1
+                  Port: 8050
+                  MSPID: OrdererMSP
+                  Identity: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/msp/signcerts/orderer.example.com-cert.pem
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                - ID: 2
+                  Host: 127.0.0.1
+                  Port: 8051
+                  MSPID: OrdererMSP
+                  Identity: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/msp/signcerts/orderer2.example.com-cert.pem
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                - ID: 3
+                  Host: 127.0.0.1
+                  Port: 8052
+                  MSPID: OrdererMSP
+                  Identity: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/msp/signcerts/orderer3.example.com-cert.pem
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+                - ID: 4
+                  Host: 127.0.0.1
+                  Port: 8053
+                  MSPID: OrdererMSP
+                  Identity: crypto-config/ordererOrganizations/example.com/orderers/orderer4.example.com/msp/signcerts/orderer4.example.com-cert.pem
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer4.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer4.example.com/tls/server.crt
+            SmartBFT:
+                <<: *SkeenBFTRealSmartBFTOptions
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:
+                - *Org1
+            Capabilities:
+                <<: *ApplicationCapabilities
+
+    SkeenBFTRealGenesis3:
+        <<: *SkeenBFTRealBase
+        Orderer:
+            <<: *OrdererDefaults
+            Addresses: []
+            BatchSize:
+                MaxMessageCount: 5000
+                AbsoluteMaxBytes: 10 MB
+                PreferredMaxBytes: 512 KB
+            Organizations:
+                - *OrdererOrg
+            Capabilities:
+                <<: *OrdererCapabilities
+            ConsenterMapping:
+                - ID: 1
+                  Host: 127.0.0.1
+                  Port: 9050
+                  MSPID: OrdererMSP
+                  Identity: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/msp/signcerts/orderer.example.com-cert.pem
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                - ID: 2
+                  Host: 127.0.0.1
+                  Port: 9051
+                  MSPID: OrdererMSP
+                  Identity: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/msp/signcerts/orderer2.example.com-cert.pem
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                - ID: 3
+                  Host: 127.0.0.1
+                  Port: 9052
+                  MSPID: OrdererMSP
+                  Identity: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/msp/signcerts/orderer3.example.com-cert.pem
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+                - ID: 4
+                  Host: 127.0.0.1
+                  Port: 9053
+                  MSPID: OrdererMSP
+                  Identity: crypto-config/ordererOrganizations/example.com/orderers/orderer4.example.com/msp/signcerts/orderer4.example.com-cert.pem
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer4.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer4.example.com/tls/server.crt
+            SmartBFT:
+                <<: *SkeenBFTRealSmartBFTOptions
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:
+                - *Org1
+            Capabilities:
+                <<: *ApplicationCapabilities
+
+    SkeenBFTRealGenesis4:
+        <<: *SkeenBFTRealBase
+        Orderer:
+            <<: *OrdererDefaults
+            Addresses: []
+            BatchSize:
+                MaxMessageCount: 5000
+                AbsoluteMaxBytes: 10 MB
+                PreferredMaxBytes: 512 KB
+            Organizations:
+                - *OrdererOrg
+            Capabilities:
+                <<: *OrdererCapabilities
+            ConsenterMapping:
+                - ID: 1
+                  Host: 127.0.0.1
+                  Port: 10050
+                  MSPID: OrdererMSP
+                  Identity: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/msp/signcerts/orderer.example.com-cert.pem
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                - ID: 2
+                  Host: 127.0.0.1
+                  Port: 10051
+                  MSPID: OrdererMSP
+                  Identity: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/msp/signcerts/orderer2.example.com-cert.pem
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                - ID: 3
+                  Host: 127.0.0.1
+                  Port: 10052
+                  MSPID: OrdererMSP
+                  Identity: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/msp/signcerts/orderer3.example.com-cert.pem
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+                - ID: 4
+                  Host: 127.0.0.1
+                  Port: 10053
+                  MSPID: OrdererMSP
+                  Identity: crypto-config/ordererOrganizations/example.com/orderers/orderer4.example.com/msp/signcerts/orderer4.example.com-cert.pem
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer4.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer4.example.com/tls/server.crt
+            SmartBFT:
+                <<: *SkeenBFTRealSmartBFTOptions
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:
+                - *Org1
+            Capabilities:
+                <<: *ApplicationCapabilities
+
+    SkeenBFTRealGenesis5:
+        <<: *SkeenBFTRealBase
+        Orderer:
+            <<: *OrdererDefaults
+            Addresses: []
+            BatchSize:
+                MaxMessageCount: 5000
+                AbsoluteMaxBytes: 10 MB
+                PreferredMaxBytes: 512 KB
+            Organizations:
+                - *OrdererOrg
+            Capabilities:
+                <<: *OrdererCapabilities
+            ConsenterMapping:
+                - ID: 1
+                  Host: 127.0.0.1
+                  Port: 11050
+                  MSPID: OrdererMSP
+                  Identity: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/msp/signcerts/orderer.example.com-cert.pem
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                - ID: 2
+                  Host: 127.0.0.1
+                  Port: 11051
+                  MSPID: OrdererMSP
+                  Identity: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/msp/signcerts/orderer2.example.com-cert.pem
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                - ID: 3
+                  Host: 127.0.0.1
+                  Port: 11052
+                  MSPID: OrdererMSP
+                  Identity: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/msp/signcerts/orderer3.example.com-cert.pem
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+                - ID: 4
+                  Host: 127.0.0.1
+                  Port: 11053
+                  MSPID: OrdererMSP
+                  Identity: crypto-config/ordererOrganizations/example.com/orderers/orderer4.example.com/msp/signcerts/orderer4.example.com-cert.pem
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer4.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer4.example.com/tls/server.crt
+            SmartBFT:
+                <<: *SkeenBFTRealSmartBFTOptions
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:
+                - *Org1
+            Capabilities:
+                <<: *ApplicationCapabilities
+
+    SkeenBFTRealGenesis6:
+        <<: *SkeenBFTRealBase
+        Orderer:
+            <<: *OrdererDefaults
+            Addresses: []
+            BatchSize:
+                MaxMessageCount: 5000
+                AbsoluteMaxBytes: 10 MB
+                PreferredMaxBytes: 512 KB
+            Organizations:
+                - *OrdererOrg
+            Capabilities:
+                <<: *OrdererCapabilities
+            ConsenterMapping:
+                - ID: 1
+                  Host: 127.0.0.1
+                  Port: 12050
+                  MSPID: OrdererMSP
+                  Identity: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/msp/signcerts/orderer.example.com-cert.pem
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                - ID: 2
+                  Host: 127.0.0.1
+                  Port: 12051
+                  MSPID: OrdererMSP
+                  Identity: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/msp/signcerts/orderer2.example.com-cert.pem
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                - ID: 3
+                  Host: 127.0.0.1
+                  Port: 12052
+                  MSPID: OrdererMSP
+                  Identity: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/msp/signcerts/orderer3.example.com-cert.pem
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+                - ID: 4
+                  Host: 127.0.0.1
+                  Port: 12053
+                  MSPID: OrdererMSP
+                  Identity: crypto-config/ordererOrganizations/example.com/orderers/orderer4.example.com/msp/signcerts/orderer4.example.com-cert.pem
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer4.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer4.example.com/tls/server.crt
+            SmartBFT:
+                <<: *SkeenBFTRealSmartBFTOptions
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:
+                - *Org1
+            Capabilities:
+                <<: *ApplicationCapabilities
+
+    # ==========================================
+    # PERFIS SKEEN-CFT-REAL: OrdererType skeen (consenter Skeen faz só a
+    # coordenação cross-shard), mas com um bloco EtcdRaft real no config do
+    # canal, para que o consenter skeen delegue a replicação intra-shard ao
+    # motor etcdraft nativo do Fabric (ver encoder.go case "skeen" e
+    # skeen.chain innerChain). Um perfil por shard (3 réplicas cada, mesma
+    # convenção do resto do projeto — CFT tolera 1 crash em 3 nós), portas
+    # próprias por shard. Reaproveita as identidades TLS já existentes
+    # (orderer/orderer2/orderer3).
+    # ==========================================
+    SkeenCFTRealGenesis1:
+        <<: *ChannelDefaults
+        Capabilities:
+            <<: *ChannelCapabilities
+        Orderer:
+            <<: *OrdererDefaults
+            Organizations:
+                - *OrdererOrg
+            Capabilities:
+                <<: *OrdererCapabilities
+            EtcdRaft:
+                Consenters:
+                    - Host: 127.0.0.1
+                      Port: 7050
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                    - Host: 127.0.0.1
+                      Port: 7051
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                    - Host: 127.0.0.1
+                      Port: 7052
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:
+                - *Org1
+            Capabilities:
+                <<: *ApplicationCapabilities
+
+    # SkeenCFTRealGenesisRTT1: igual a SkeenCFTRealGenesis1, mas MaxMessageCount=1
+    # — mesmo racional de SkeenGenesisRTT (ver comentário lá), pro teste de
+    # latência de commit real (workers=1) com CFT.
+    SkeenCFTRealGenesisRTT1:
+        <<: *ChannelDefaults
+        Capabilities:
+            <<: *ChannelCapabilities
+        Orderer:
+            <<: *OrdererDefaults
+            BatchSize:
+                MaxMessageCount: 1
+                AbsoluteMaxBytes: 99 MB
+                PreferredMaxBytes: 512 KB
+            Organizations:
+                - *OrdererOrg
+            Capabilities:
+                <<: *OrdererCapabilities
+            EtcdRaft:
+                Consenters:
+                    - Host: 127.0.0.1
+                      Port: 7050
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                    - Host: 127.0.0.1
+                      Port: 7051
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                    - Host: 127.0.0.1
+                      Port: 7052
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:
+                - *Org1
+            Capabilities:
+                <<: *ApplicationCapabilities
+
+    SkeenCFTRealGenesis2:
+        <<: *ChannelDefaults
+        Capabilities:
+            <<: *ChannelCapabilities
+        Orderer:
+            <<: *OrdererDefaults
+            Organizations:
+                - *OrdererOrg
+            Capabilities:
+                <<: *OrdererCapabilities
+            EtcdRaft:
+                Consenters:
+                    - Host: 127.0.0.1
+                      Port: 8050
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                    - Host: 127.0.0.1
+                      Port: 8051
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                    - Host: 127.0.0.1
+                      Port: 8052
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:
+                - *Org1
+            Capabilities:
+                <<: *ApplicationCapabilities
+
+    SkeenCFTRealGenesisRTT2:
+        <<: *ChannelDefaults
+        Capabilities:
+            <<: *ChannelCapabilities
+        Orderer:
+            <<: *OrdererDefaults
+            BatchSize:
+                MaxMessageCount: 1
+                AbsoluteMaxBytes: 99 MB
+                PreferredMaxBytes: 512 KB
+            Organizations:
+                - *OrdererOrg
+            Capabilities:
+                <<: *OrdererCapabilities
+            EtcdRaft:
+                Consenters:
+                    - Host: 127.0.0.1
+                      Port: 8050
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                    - Host: 127.0.0.1
+                      Port: 8051
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                    - Host: 127.0.0.1
+                      Port: 8052
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:
+                - *Org1
+            Capabilities:
+                <<: *ApplicationCapabilities
+
+    SkeenCFTRealGenesis3:
+        <<: *ChannelDefaults
+        Capabilities:
+            <<: *ChannelCapabilities
+        Orderer:
+            <<: *OrdererDefaults
+            Organizations:
+                - *OrdererOrg
+            Capabilities:
+                <<: *OrdererCapabilities
+            EtcdRaft:
+                Consenters:
+                    - Host: 127.0.0.1
+                      Port: 9050
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                    - Host: 127.0.0.1
+                      Port: 9051
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                    - Host: 127.0.0.1
+                      Port: 9052
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:
+                - *Org1
+            Capabilities:
+                <<: *ApplicationCapabilities
+
+    SkeenCFTRealGenesisRTT3:
+        <<: *ChannelDefaults
+        Capabilities:
+            <<: *ChannelCapabilities
+        Orderer:
+            <<: *OrdererDefaults
+            BatchSize:
+                MaxMessageCount: 1
+                AbsoluteMaxBytes: 99 MB
+                PreferredMaxBytes: 512 KB
+            Organizations:
+                - *OrdererOrg
+            Capabilities:
+                <<: *OrdererCapabilities
+            EtcdRaft:
+                Consenters:
+                    - Host: 127.0.0.1
+                      Port: 9050
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                    - Host: 127.0.0.1
+                      Port: 9051
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                    - Host: 127.0.0.1
+                      Port: 9052
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:
+                - *Org1
+            Capabilities:
+                <<: *ApplicationCapabilities
+
+    SkeenCFTRealGenesis4:
+        <<: *ChannelDefaults
+        Capabilities:
+            <<: *ChannelCapabilities
+        Orderer:
+            <<: *OrdererDefaults
+            Organizations:
+                - *OrdererOrg
+            Capabilities:
+                <<: *OrdererCapabilities
+            EtcdRaft:
+                Consenters:
+                    - Host: 127.0.0.1
+                      Port: 10050
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                    - Host: 127.0.0.1
+                      Port: 10051
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                    - Host: 127.0.0.1
+                      Port: 10052
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:
+                - *Org1
+            Capabilities:
+                <<: *ApplicationCapabilities
+
+    SkeenCFTRealGenesis5:
+        <<: *ChannelDefaults
+        Capabilities:
+            <<: *ChannelCapabilities
+        Orderer:
+            <<: *OrdererDefaults
+            Organizations:
+                - *OrdererOrg
+            Capabilities:
+                <<: *OrdererCapabilities
+            EtcdRaft:
+                Consenters:
+                    - Host: 127.0.0.1
+                      Port: 11050
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                    - Host: 127.0.0.1
+                      Port: 11051
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                    - Host: 127.0.0.1
+                      Port: 11052
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:
+                - *Org1
+            Capabilities:
+                <<: *ApplicationCapabilities
+
+    SkeenCFTRealGenesis6:
+        <<: *ChannelDefaults
+        Capabilities:
+            <<: *ChannelCapabilities
+        Orderer:
+            <<: *OrdererDefaults
+            Organizations:
+                - *OrdererOrg
+            Capabilities:
+                <<: *OrdererCapabilities
+            EtcdRaft:
+                Consenters:
+                    - Host: 127.0.0.1
+                      Port: 12050
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                    - Host: 127.0.0.1
+                      Port: 12051
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                    - Host: 127.0.0.1
+                      Port: 12052
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:
+                - *Org1
+            Capabilities:
+                <<: *ApplicationCapabilities
+
+    SkeenCFTRealGenesisRTT4:
+        <<: *ChannelDefaults
+        Capabilities:
+            <<: *ChannelCapabilities
+        Orderer:
+            <<: *OrdererDefaults
+            BatchSize:
+                MaxMessageCount: 1
+                AbsoluteMaxBytes: 99 MB
+                PreferredMaxBytes: 512 KB
+            Organizations:
+                - *OrdererOrg
+            Capabilities:
+                <<: *OrdererCapabilities
+            EtcdRaft:
+                Consenters:
+                    - Host: 127.0.0.1
+                      Port: 10050
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                    - Host: 127.0.0.1
+                      Port: 10051
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                    - Host: 127.0.0.1
+                      Port: 10052
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:
+                - *Org1
+            Capabilities:
+                <<: *ApplicationCapabilities
+
+    # ==========================================
+    # PERFIL 3: RAFT (BASELINE CFT)
+    # ==========================================
+    RaftChannel:
+        <<: *ChannelDefaults
+        Capabilities:
+            <<: *ChannelCapabilities
+        Orderer:
+            <<: *OrdererDefaults
+            OrdererType: etcdraft   
+            Organizations:
+                - *OrdererOrg
+            Capabilities:
+                <<: *OrdererCapabilities
+            EtcdRaft:
+                Consenters:
+                    - Host: 127.0.0.1
+                      Port: 7050
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                    - Host: 127.0.0.1
+                      Port: 8050
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                    - Host: 127.0.0.1
+                      Port: 9050
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+                    - Host: 127.0.0.1
+                      Port: 10050
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer4.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer4.example.com/tls/server.crt
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:
+                - *Org1
+            Capabilities:
+                <<: *ApplicationCapabilities
+
+    # ==========================================
+    # PERFIL 3b: RAFT 3 NÓS (CFT — tolera 1 crash)
+    # Quorum = 2/3. Comparação justa com BFT-SMaRt (4 nós, tolera 1 falha BFT).
+    # ==========================================
+    RaftChannel3:
+        <<: *ChannelDefaults
+        Capabilities:
+            <<: *ChannelCapabilities
+        Orderer:
+            <<: *OrdererDefaults
+            OrdererType: etcdraft
+            Organizations:
+                - *OrdererOrg
+            Capabilities:
+                <<: *OrdererCapabilities
+            EtcdRaft:
+                Consenters:
+                    - Host: 127.0.0.1
+                      Port: 7050
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                    - Host: 127.0.0.1
+                      Port: 8050
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                    - Host: 127.0.0.1
+                      Port: 9050
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:
+                - *Org1
+            Capabilities:
+                <<: *ApplicationCapabilities
+
+    # RaftChannel3S2: 2o grupo Raft nativo independente (shard 2) pras baterias
+    # de 2 shards — mesmas identidades TLS de RaftChannel3, portas +1
+    # (7051/8051/9051) pra rodar lado a lado no mesmo host.
+    RaftChannel3S2:
+        <<: *ChannelDefaults
+        Capabilities:
+            <<: *ChannelCapabilities
+        Orderer:
+            <<: *OrdererDefaults
+            OrdererType: etcdraft
+            Organizations:
+                - *OrdererOrg
+            Capabilities:
+                <<: *OrdererCapabilities
+            EtcdRaft:
+                Consenters:
+                    - Host: 127.0.0.1
+                      Port: 7051
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                    - Host: 127.0.0.1
+                      Port: 8051
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                    - Host: 127.0.0.1
+                      Port: 9051
+                      ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+                      ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:
+                - *Org1
+            Capabilities:
+                <<: *ApplicationCapabilities
+
+    # ==========================================
+    # PERFIL 2: SMARTBFT (BASELINE BFT)
+    # ==========================================
+    SmartBFTChannel:
+        <<: *ChannelDefaults
+        Capabilities:
+            <<: *ChannelCapabilities_V3
+        Orderer:
+            <<: *OrdererDefaults
+            OrdererType: BFT
+            Addresses: []
+            BatchSize:
+                MaxMessageCount: 5000
+                AbsoluteMaxBytes: 10 MB
+                PreferredMaxBytes: 512 KB
+            Organizations:
+                - *OrdererOrg
+            Capabilities:
+                <<: *OrdererCapabilities
+            ConsenterMapping:
+                - ID: 1
+                  Host: 127.0.0.1
+                  Port: 7050
+                  MSPID: OrdererMSP
+                  Identity: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/msp/signcerts/orderer.example.com-cert.pem
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+                - ID: 2
+                  Host: 127.0.0.1
+                  Port: 8050
+                  MSPID: OrdererMSP
+                  Identity: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/msp/signcerts/orderer2.example.com-cert.pem
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer2.example.com/tls/server.crt
+                - ID: 3
+                  Host: 127.0.0.1
+                  Port: 9050
+                  MSPID: OrdererMSP
+                  Identity: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/msp/signcerts/orderer3.example.com-cert.pem
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer3.example.com/tls/server.crt
+                - ID: 4
+                  Host: 127.0.0.1
+                  Port: 10050
+                  MSPID: OrdererMSP
+                  Identity: crypto-config/ordererOrganizations/example.com/orderers/orderer4.example.com/msp/signcerts/orderer4.example.com-cert.pem
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer4.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer4.example.com/tls/server.crt
+            SmartBFT:
+                RequestBatchMaxInterval: 200ms
+                RequestForwardTimeout: 5s
+                RequestComplainTimeout: 20s
+                RequestAutoRemoveTimeout: 3m0s
+                ViewChangeResendInterval: 5s
+                ViewChangeTimeout: 20s
+                LeaderHeartbeatTimeout: 1m0s
+                CollectTimeout: 1s
+                IncomingMessageBufferSize: 200
+                RequestPoolSize: 100000
+                LeaderHeartbeatCount: 10
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:
+                - *Org1
+            Capabilities:
+                <<: *ApplicationCapabilities

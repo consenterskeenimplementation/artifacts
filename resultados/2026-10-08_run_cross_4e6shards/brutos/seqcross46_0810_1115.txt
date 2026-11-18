@@ -1,0 +1,16 @@
+CROSS46_INICIO orderer_alg3i md5=b5ed039e51a4 configtx=157594b7fe63 teste110_pin=e80676108f40 08/10 11:13:01
+ARQ_/dev/shm/g109dx_c0_d2_cft4_calibp/resultado.txt
+INICIO 08/10 10:54:28 modo=cft 4 shards, CROSS=0 (cada tx cross em 2 shards sorteados entre os 4), orderer_alg3i md5=b5ed039e51a4 (marca D: tx cross no tryDeliver, entre as linhas 24 e 25), Writers corrigido, 60s (warmup 10s), 1 runs, workers/shard={200}, LAN 2ms, MAX_REFAZ=0
+ordem: 200:1 
+PINNING réplicas: s1r1=0-5 s1r2=6-11 s1r3=12-17 s2r1=18-23 s2r2=24-29 s2r3=30-35 s3r1=36-41 s3r2=42-47 s3r3=48-53 s4r1=54-59 s4r2=60-65 s4r3=66-71 | cliente: até 80 núcleos {80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127,128,129,130,131,132,133,134,135,136,137,138,139,140,141,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159} | monitor: 79
+modo=cft cross=0 workers_por_shard=200 run=1 refeita=0 shards=4 dest=2 total=800 cores_cliente=32  TPS_total=36770.49 erros=0 intra_ack_avg=21.46ms cross_ack_avg=0.00ms cross_ack_p99=0.00ms  d_tps=36824 d_n=57563 incompletas_d=0 sd_avg=59.22ms sd_p50=58.10ms sd_p99=113.64ms od_avg=47.56ms od_p50=46.20ms od_p99=98.08ms commit_tps=36824 sc_avg=59.20ms sc_p99=113.63ms d_origem=D:68734,C:0 x_n=0 x_inc=0 x_sd_avg=NAms x_sd_p50=NAms x_sd_p99=NAms x_d_real=0 i_n=57563 i_sd_avg=59.22ms i_sd_p50=58.10ms  pin=ok 13_processos,_190_threads,_104_núcleos,_outros=nenhum  cpu_cliente=9.9/32 cliente_saturado=não cpu_rep_max=5.0/6 cpu_rep_media=1.8/6  hora=10:56:05
+fora_da_curva final: 
+FIM_G109D 08/10 10:56:05
+ARQ_/dev/shm/g109dx_c0_d2_cft4_abalg3h1/resultado.txt
+INICIO 08/10 11:13:01 modo=cft 4 shards, CROSS=0 (cada tx cross em 2 shards sorteados entre os 4), orderer_alg3h md5=6821f9a3cec9 (marca D: tx cross no tryDeliver, entre as linhas 24 e 25), Writers corrigido, 60s (warmup 10s), 1 runs, workers/shard={200}, LAN 2ms, MAX_REFAZ=0
+modo=cft cross=0 workers_por_shard=200 run=1 refeita=0 shards=4 dest=2 total=800 cores_cliente=32  TPS_total=35085.23 erros=0 intra_ack_avg=22.52ms cross_ack_avg=0.00ms cross_ack_p99=0.00ms  d_tps=35149 d_n=54917 incompletas_d=0 sd_avg=62.12ms sd_p50=60.68ms sd_p99=122.63ms od_avg=49.73ms od_p50=48.23ms od_p99=104.08ms commit_tps=35149 sc_avg=62.10ms sc_p99=122.51ms d_origem=D:65433,C:0 x_n=0 x_inc=0 x_sd_avg=NAms x_sd_p50=NAms x_sd_p99=NAms x_d_real=0 i_n=54917 i_sd_avg=62.12ms i_sd_p50=60.68ms  pin=ok 13_processos,_192_threads,_104_núcleos,_outros=nenhum  cpu_cliente=9.5/32 cliente_saturado=não cpu_rep_max=5.0/6 cpu_rep_media=1.8/6  hora=11:14:38
+FIM_G109D 08/10 11:14:38
+ARQ_/dev/shm/g109dx_c0_d2_cft4_abalg3i1/resultado.txt
+INICIO 08/10 11:14:39 modo=cft 4 shards, CROSS=0 (cada tx cross em 2 shards sorteados entre os 4), orderer_alg3i md5=b5ed039e51a4 (marca D: tx cross no tryDeliver, entre as linhas 24 e 25), Writers corrigido, 60s (warmup 10s), 1 runs, workers/shard={200}, LAN 2ms, MAX_REFAZ=0
+ARQ_/dev/shm/g109dx_c*_d*_*[46]_p/resultado.txt
+ARQ_/dev/shm/seq_cross46.txt
